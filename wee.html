@@ -1,0 +1,1053 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>WebRTC Video Call - WebSocket Signaling</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --panel: #111827;
+      --muted: #94a3b8;
+      --text: #e5e7eb;
+      --accent: #22c55e;
+      --accent-2: #38bdf8;
+      --danger: #ef4444;
+      --border: #1f2937;
+      --warning: #f59e0b;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      
+      font-family: "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: radial-gradient(circle at top right, #1e293b 0%, var(--bg) 45%, #020617 100%);
+      color: var(--text);
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 20px;
+    }
+
+    .app {
+      width: min(1100px, 100%);
+      background: rgba(17, 24, 39, 0.94);
+      backdrop-filter: blur(2px);
+      border: 1px solid var(--border);
+      border-radius: 28px;
+      padding: 24px;
+      display: grid;
+      gap: 20px;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.6);
+    }
+
+    h1 {
+      font-size: 1.6rem;
+      letter-spacing: -0.3px;
+      background: linear-gradient(135deg, #f0f9ff, #86efac);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .badge {
+      background: #1e293b;
+      padding: 4px 12px;
+      border-radius: 40px;
+      font-size: 0.7rem;
+      font-weight: 500;
+      color: var(--muted);
+    }
+
+    .video-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 24px;
+      margin-bottom: 8px;
+    }
+
+    .video-container {
+      background: #030712;
+      border-radius: 24px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      box-shadow: 0 12px 28px rgba(0, 0, 0, 0.4);
+      transition: all 0.2s;
+    }
+
+    .video-label {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: rgba(0, 0, 0, 0.75);
+      padding: 10px 16px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      backdrop-filter: blur(8px);
+      border-bottom: 1px solid #2d3a4e;
+    }
+
+    .remote-label {
+      background: rgba(56, 189, 248, 0.2);
+    }
+
+    video {
+      width: 100%;
+      background: #010409;
+      aspect-ratio: 16 / 9;
+      object-fit: cover;
+      display: block;
+    }
+
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      justify-content: center;
+      margin-top: 8px;
+    }
+
+    .action-group {
+      display: flex;
+      gap: 10px;
+      background: #0f172a80;
+      padding: 8px 16px;
+      border-radius: 60px;
+      backdrop-filter: blur(4px);
+    }
+
+    button {
+      border-radius: 40px;
+      border: none;
+      background: #1f2937;
+      color: white;
+      font-weight: 600;
+      padding: 8px 20px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      font-size: 0.85rem;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    button.primary {
+      background: linear-gradient(135deg, #16a34a, var(--accent));
+      color: #03150b;
+    }
+
+    button.secondary {
+      background: linear-gradient(135deg, #0284c7, var(--accent-2));
+      color: #031420;
+    }
+
+    button.danger {
+      background: linear-gradient(135deg, #b91c1c, var(--danger));
+      color: #1b0404;
+    }
+
+    button.warning {
+      background: linear-gradient(135deg, #d97706, var(--warning));
+      color: #1e1502;
+    }
+
+    button:active {
+      transform: scale(0.96);
+    }
+
+    .status {
+      background: rgba(2, 6, 23, 0.6);
+      border: 1px dashed var(--border);
+      border-radius: 40px;
+      padding: 10px 20px;
+      font-size: 0.85rem;
+      text-align: center;
+    }
+
+    .call-panel {
+      background: #0b1220;
+      border-radius: 24px;
+      padding: 16px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: flex-end;
+      border: 1px solid var(--border);
+    }
+
+    .field {
+      flex: 1;
+      min-width: 140px;
+    }
+
+    .field label {
+      display: block;
+      font-size: 0.7rem;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+
+    input, select {
+      background: #020617;
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 8px 14px;
+      color: white;
+      width: 100%;
+      outline: none;
+    }
+
+    .log {
+      background: #020617;
+      border-radius: 20px;
+      padding: 14px;
+      max-height: 180px;
+      overflow: auto;
+      font-family: 'Fira Code', monospace;
+      font-size: 0.75rem;
+      border: 1px solid var(--border);
+      white-space: pre-wrap;
+    }
+
+    .flex-btns {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    @media (max-width: 720px) {
+      .app { padding: 16px; }
+      .video-grid { gap: 12px; }
+      button { padding: 6px 14px; }
+    }
+  </style>
+</head>
+<body>
+<main class="app">
+  <h1>
+    📹 WebRTC Video Call
+    <span class="badge">WebSocket Signaling</span>
+  </h1>
+
+  <div class="video-grid">
+    <div class="video-container">
+      <div class="video-label">📸 Your Camera</div>
+      <video id="localVideo" autoplay muted playsinline></video>
+    </div>
+    <div class="video-container">
+      <div class="video-label remote-label">🖥️ Remote Peer</div>
+      <video id="remoteVideo" autoplay playsinline></video>
+    </div>
+  </div>
+
+  <div class="status" id="status">⚫ Status: <strong>Disconnected</strong></div>
+
+  <div class="call-panel">
+    <div class="field">
+      <label>👤 Your User ID</label>
+      <input id="userId" placeholder="e.g. alice" value="alice" />
+    </div>
+    <div class="field">
+      <label>🎯 Target User ID</label>
+      <input id="target" placeholder="e.g. bob" value="bob" />
+    </div>
+    <div class="flex-btns">
+      <button id="connectBtn" class="primary">🔌 Connect</button>
+      <button id="disconnectBtn" class="danger">❌ Disconnect</button>
+    </div>
+  </div>
+
+  <div class="controls">
+    <div class="action-group">
+      <button id="callBtn" class="secondary">📞 Start Call</button>
+      <button id="hangupBtn" class="danger">📴 Hang Up</button>
+    </div>
+    <div class="action-group">
+      <button id="aiBtn">🎙️ Ask AI</button>
+    </div>
+    <div class="action-group">
+      <button id="muteMicBtn" class="warning">🎤 Mute Mic</button>
+      <button id="disableCamBtn" class="warning">📷 Hide Cam</button>
+    </div>
+    <div class="action-group">
+      <button id="clearLogBtn">🧹 Clear Log</button>
+    </div>
+  </div>
+
+  <div>
+    <div style="font-size:0.7rem; margin-bottom:6px;">📡 Signaling Log</div>
+    <div class="log" id="log"></div>
+  </div>
+
+  <div style="margin-top:12px; display:flex; gap:12px; align-items:flex-start;">
+    <div style="flex:1;">
+      <div style="font-size:0.8rem; margin-bottom:6px;">🎤 AI Voice Input</div>
+      <button id="startSttBtn">🎙️ Start AI Call</button>
+      <div id="transcript" contenteditable="true" style="margin-top:8px; background:#020617; padding:10px; border-radius:8px; border:1px solid var(--border); min-height:48px;" aria-label="Transcript input"></div>
+    </div>
+    <div style="flex:1;">
+      <div style="font-size:0.8rem; margin-bottom:6px;">🤖 AI Reply</div>
+      <div id="aiReply" style="margin-top:8px; background:#020617; padding:10px; border-radius:8px; border:1px solid var(--border); min-height:48px;"></div>
+      <div style="margin-top:10px; display:grid; gap:8px;">
+        <div style="display:grid; gap:4px;">
+          <label for="voiceSelect" style="font-size:0.72rem; color:var(--muted);">Voice</label>
+          <select id="voiceSelect"></select>
+        </div>
+        <div style="display:grid; gap:4px;">
+          <label for="rateRange" style="font-size:0.72rem; color:var(--muted);">Speed</label>
+          <input id="rateRange" type="range" min="0.75" max="1.15" step="0.01" value="0.95" />
+        </div>
+        <div style="display:grid; gap:4px;">
+          <label for="pitchRange" style="font-size:0.72rem; color:var(--muted);">Pitch</label>
+          <input id="pitchRange" type="range" min="0.85" max="1.15" step="0.01" value="1.03" />
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+  // -------------------- DOM Elements --------------------
+  const userIdInput = document.getElementById('userId');
+  const targetInput = document.getElementById('target');
+  const connectBtn = document.getElementById('connectBtn');
+  const disconnectBtn = document.getElementById('disconnectBtn');
+  const callBtn = document.getElementById('callBtn');
+  const hangupBtn = document.getElementById('hangupBtn');
+  const muteMicBtn = document.getElementById('muteMicBtn');
+  const disableCamBtn = document.getElementById('disableCamBtn');
+  const clearLogBtn = document.getElementById('clearLogBtn');
+  const statusSpan = document.querySelector('#status strong');
+  const logDiv = document.getElementById('log');
+
+  const localVideo = document.getElementById('localVideo');
+  const remoteVideo = document.getElementById('remoteVideo');
+
+  // -------------------- Global State --------------------
+  let socket = null;
+  let myUserId = null;
+  let peerConnection = null;
+  let localStream = null;
+  let isMicMuted = false;
+  let isCamDisabled = false;
+  let aiCallActive = false;
+  let recognitionRunning = false;
+  let connectionReadyPromise = null;
+  let connectionReadyResolve = null;
+  let connectionReadyReject = null;
+
+  // Track current call target
+  let currentCallTarget = null;
+
+  // STUN server configuration (Google's public STUN)
+  const configuration = {
+    iceServers: [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' }
+    ]
+  };
+
+  // -------------------- Helpers --------------------
+  function updateStatus(text) {
+    statusSpan.textContent = text;
+  }
+
+  function appendLog(message, data = null) {
+    const time = new Date().toLocaleTimeString();
+    let line = `[${time}] ${message}`;
+    if (data) {
+      try {
+        line += `\n${JSON.stringify(data, null, 2)}`;
+      } catch (e) {
+        line += `\n${data}`;
+      }
+    }
+    logDiv.textContent += line + '\n\n';
+    logDiv.scrollTop = logDiv.scrollHeight;
+  }
+
+  function getApiBaseUrl() {
+    const origin = window.location.origin;
+    if (origin && origin !== 'null' && origin !== 'file://') {
+      return origin;
+    }
+    return 'http://127.0.0.1:8000';
+  }
+
+  // WebSocket URL helper
+  function getWebSocketUrl(userId) {
+    const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+    const host = window.location.host || 'localhost:8000';
+    return `${protocol}://${host}/ws/${encodeURIComponent(userId)}`;
+  }
+
+  // -------------------- WebRTC Core --------------------
+  async function initPeerConnection(targetUserId) {
+    if (peerConnection) {
+      peerConnection.close();
+    }
+    peerConnection = new RTCPeerConnection(configuration);
+
+    // Add local tracks when available
+    if (localStream) {
+      localStream.getTracks().forEach(track => {
+        peerConnection.addTrack(track, localStream);
+      });
+    }
+
+    // Handle ICE candidates
+    peerConnection.onicecandidate = (event) => {
+      if (event.candidate) {
+        appendLog(`📡 Sending ICE candidate to ${targetUserId}`);
+        sendSignalingMessage(targetUserId, 'candidate', event.candidate);
+      }
+    };
+
+    // Handle remote stream
+    peerConnection.ontrack = (event) => {
+      appendLog('🎥 Received remote track');
+      if (remoteVideo.srcObject !== event.streams[0]) {
+        remoteVideo.srcObject = event.streams[0];
+      }
+    };
+
+    // Connection state monitoring
+    peerConnection.onconnectionstatechange = () => {
+      appendLog(`🔗 Connection state: ${peerConnection.connectionState}`);
+      if (peerConnection.connectionState === 'connected') {
+        updateStatus(`In call with ${targetUserId}`);
+      } else if (peerConnection.connectionState === 'disconnected') {
+        appendLog('⚠️ Peer disconnected, hanging up');
+        hangUpCall();
+      } else if (peerConnection.connectionState === 'failed') {
+        appendLog('❌ Connection failed');
+        hangUpCall();
+      }
+    };
+
+    peerConnection.oniceconnectionstatechange = () => {
+      appendLog(`❄️ ICE state: ${peerConnection.iceConnectionState}`);
+    };
+  }
+
+  async function startLocalMedia() {
+    if (localStream) {
+      // Already have stream, just return
+      return localStream;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      localStream = stream;
+      localVideo.srcObject = stream;
+      appendLog('✅ Local camera & mic acquired');
+      return stream;
+    } catch (err) {
+      appendLog(`❌ Failed to get media: ${err.message}`);
+      throw err;
+    }
+  }
+
+  // Create and send offer
+  async function startCall(targetUserId) {
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      appendLog('❌ WebSocket not connected. Please connect first.');
+      return;
+    }
+    if (!targetUserId) {
+      appendLog('❌ No target user specified');
+      return;
+    }
+    if (peerConnection && peerConnection.connectionState === 'connected') {
+      appendLog('⚠️ Already in a call, hang up first');
+      return;
+    }
+
+    try {
+      await startLocalMedia();
+      await initPeerConnection(targetUserId);
+      currentCallTarget = targetUserId;
+
+      // Create offer
+      const offer = await peerConnection.createOffer();
+      await peerConnection.setLocalDescription(offer);
+      appendLog(`📞 Sending offer to ${targetUserId}`);
+      sendSignalingMessage(targetUserId, 'offer', offer);
+      updateStatus(`Calling ${targetUserId}...`);
+    } catch (err) {
+      appendLog(`Error starting call: ${err.message}`);
+    }
+  }
+
+  async function handleOffer(fromUserId, offer) {
+    appendLog(`📞 Received offer from ${fromUserId}`);
+    try {
+      await startLocalMedia();
+      await initPeerConnection(fromUserId);
+      currentCallTarget = fromUserId;
+
+      await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+      const answer = await peerConnection.createAnswer();
+      await peerConnection.setLocalDescription(answer);
+      sendSignalingMessage(fromUserId, 'answer', answer);
+      appendLog(`✅ Sent answer to ${fromUserId}`);
+      updateStatus(`Connected with ${fromUserId}`);
+    } catch (err) {
+      appendLog(`Error handling offer: ${err.message}`);
+    }
+  }
+
+  async function handleAnswer(fromUserId, answer) {
+    appendLog(`🔁 Received answer from ${fromUserId}`);
+    if (!peerConnection) {
+      appendLog('⚠️ No peer connection for answer');
+      return;
+    }
+    try {
+      await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+      appendLog('✅ Remote description set');
+    } catch (err) {
+      appendLog(`Error setting answer: ${err.message}`);
+    }
+  }
+
+  async function handleCandidate(fromUserId, candidate) {
+    if (!peerConnection) {
+      appendLog('⚠️ Received ICE candidate but no peer connection');
+      return;
+    }
+    try {
+      await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+      appendLog(`⚡ ICE candidate added from ${fromUserId}`);
+    } catch (err) {
+      appendLog(`ICE candidate error: ${err.message}`);
+    }
+  }
+
+  function hangUpCall() {
+    if (peerConnection) {
+      peerConnection.close();
+      peerConnection = null;
+    }
+    if (remoteVideo.srcObject) {
+      remoteVideo.srcObject = null;
+    }
+    currentCallTarget = null;
+    updateStatus(myUserId ? `Connected as ${myUserId}` : 'Disconnected');
+    appendLog('📴 Call ended');
+    // Do not stop local stream, keep video preview active.
+  }
+
+  // Fully disconnect media (optional)
+  function stopLocalMedia() {
+    if (localStream) {
+      localStream.getTracks().forEach(track => track.stop());
+      localStream = null;
+      localVideo.srcObject = null;
+    }
+    isMicMuted = false;
+    isCamDisabled = false;
+    muteMicBtn.textContent = '🎤 Mute Mic';
+    disableCamBtn.textContent = '📷 Hide Cam';
+  }
+
+  // Mute/unmute microphone
+  function toggleMuteMic() {
+    if (!localStream) {
+      appendLog('No local stream available');
+      return;
+    }
+    const audioTracks = localStream.getAudioTracks();
+    if (audioTracks.length === 0) return;
+    audioTracks.forEach(track => {
+      track.enabled = !track.enabled;
+    });
+    isMicMuted = !audioTracks[0].enabled;
+    muteMicBtn.textContent = isMicMuted ? '🎙️ Unmute Mic' : '🎤 Mute Mic';
+    appendLog(isMicMuted ? 'Microphone muted' : 'Microphone unmuted');
+  }
+
+  // Disable/enable camera
+  function toggleCamera() {
+    if (!localStream) {
+      appendLog('No local stream available');
+      return;
+    }
+    const videoTracks = localStream.getVideoTracks();
+    if (videoTracks.length === 0) return;
+    videoTracks.forEach(track => {
+      track.enabled = !track.enabled;
+    });
+    isCamDisabled = !videoTracks[0].enabled;
+    disableCamBtn.textContent = isCamDisabled ? '📷 Show Cam' : '📷 Hide Cam';
+    appendLog(isCamDisabled ? 'Camera disabled' : 'Camera enabled');
+  }
+
+  // -------------------- Signaling via WebSocket --------------------
+  function sendSignalingMessage(target, type, payload) {
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      appendLog('❌ Cannot send message: not connected');
+      return;
+    }
+    const msg = { target, type, payload };
+    socket.send(JSON.stringify(msg));
+    appendLog(`📤 Sent ${type} to ${target}`, { type, target });
+  }
+
+  function connectWebSocket() {
+    const userId = userIdInput.value.trim();
+    if (!userId) {
+      alert('Please enter your user ID');
+      return Promise.reject(new Error('Missing user ID'));
+    }
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      appendLog('Already connected');
+      return Promise.resolve(socket);
+    }
+    if (socket && socket.readyState === WebSocket.CONNECTING && connectionReadyPromise) {
+      return connectionReadyPromise;
+    }
+    myUserId = userId;
+    const url = getWebSocketUrl(myUserId);
+    socket = new WebSocket(url);
+    updateStatus('Connecting...');
+
+    connectionReadyPromise = new Promise((resolve, reject) => {
+      connectionReadyResolve = resolve;
+      connectionReadyReject = reject;
+    });
+
+    socket.onopen = () => {
+      updateStatus(`Connected as ${myUserId}`);
+      appendLog(`✅ WebSocket connected (${myUserId})`);
+      // Automatically acquire media for preview, but not for call yet.
+      startLocalMedia().catch(err => appendLog(`Camera error: ${err.message}`));
+      if (connectionReadyResolve) {
+        connectionReadyResolve(socket);
+      }
+    };
+
+    socket.onmessage = async (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        const from = data.from;
+        const type = data.type;
+        const payload = data.payload;
+        appendLog(`📨 Received from ${from}`, { type });
+
+        if (type === 'offer') {
+          await handleOffer(from, payload);
+        } else if (type === 'answer') {
+          await handleAnswer(from, payload);
+        } else if (type === 'candidate') {
+          await handleCandidate(from, payload);
+        } else {
+          appendLog(`Unknown signaling type: ${type}`);
+        }
+      } catch (err) {
+        appendLog(`Error parsing message: ${err.message}`);
+      }
+    };
+
+    socket.onclose = () => {
+      updateStatus('Disconnected');
+      appendLog('🔌 WebSocket closed');
+      hangUpCall();
+      if (aiCallActive) {
+        aiCallActive = false;
+        recognitionRunning = false;
+        startSttBtn.textContent = '🎙️ Start AI Call';
+        if (recognition) {
+          recognition.abort();
+        }
+      }
+      // Keep local preview but disable signaling
+      if (connectionReadyReject) {
+        connectionReadyReject(new Error('WebSocket closed'));
+      }
+      connectionReadyPromise = null;
+      connectionReadyResolve = null;
+      connectionReadyReject = null;
+    };
+
+    socket.onerror = (err) => {
+      appendLog(`WebSocket error: ${err}`);
+      if (connectionReadyReject) {
+        connectionReadyReject(err instanceof Error ? err : new Error('WebSocket error'));
+      }
+    };
+
+    return connectionReadyPromise;
+  }
+
+  function disconnectWebSocket() {
+    aiCallActive = false;
+    recognitionRunning = false;
+    startSttBtn.textContent = '🎙️ Start AI Call';
+    if (recognition) {
+      recognition.abort();
+    }
+    if (socket) {
+      socket.close();
+      socket = null;
+    }
+    hangUpCall();
+    updateStatus('Disconnected');
+    appendLog('Disconnected from signaling server');
+    // optionally keep local camera running? we keep, but clear remote
+    if (remoteVideo.srcObject) remoteVideo.srcObject = null;
+    myUserId = null;
+    currentCallTarget = null;
+  }
+
+  // -------------------- Call button handler --------------------
+  function handleCall() {
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      alert('Connect to signaling server first');
+      return;
+    }
+    const targetId = targetInput.value.trim();
+    if (!targetId) {
+      alert('Enter target user ID');
+      return;
+    }
+    if (myUserId === targetId) {
+      alert('Cannot call yourself');
+      return;
+    }
+    if (currentCallTarget && peerConnection && peerConnection.connectionState === 'connected') {
+      alert('Already in a call. Hang up first.');
+      return;
+    }
+    startCall(targetId);
+  }
+
+  // Clean hangup
+  function hangupButtonHandler() {
+    if (peerConnection) {
+      hangUpCall();
+      // Also send a termination signal? not needed but we close local conn.
+      appendLog('Call terminated by user');
+    } else {
+      appendLog('No active call to hang up');
+    }
+  }
+
+  // -------------------- UI Helpers & Cleanup --------------------
+  function clearLog() {
+    logDiv.textContent = '';
+  }
+
+  function startListeningSession() {
+    if (!recognition) {
+      appendLog('STT is not available in this browser.');
+      return;
+    }
+    if (!aiCallActive) {
+      return;
+    }
+    if (recognitionRunning) {
+      return;
+    }
+    try {
+      recognitionRunning = true;
+      recognition.start();
+      appendLog('🔊 AI call is listening...');
+    } catch (e) {
+      recognitionRunning = false;
+      appendLog('Error starting STT: ' + e.message);
+    }
+  }
+
+  function stopAiCall() {
+    aiCallActive = false;
+    recognitionRunning = false;
+    startSttBtn.textContent = '🎙️ Start AI Call';
+    if (recognition) {
+      try {
+        recognition.abort();
+      } catch (e) {
+        appendLog('Error stopping STT: ' + e.message);
+      }
+    }
+    disconnectWebSocket();
+  }
+
+  function startAiCall() {
+    if (aiCallActive) {
+      return;
+    }
+    aiCallActive = true;
+    startSttBtn.textContent = '🛑 End AI Call';
+    connectWebSocket().catch((err) => {
+      appendLog(`Failed to connect for AI call: ${err.message}`);
+      stopAiCall();
+    });
+    startListeningSession();
+  }
+
+  window.addEventListener('beforeunload', () => {
+    if (localStream) {
+      localStream.getTracks().forEach(track => track.stop());
+    }
+    if (peerConnection) {
+      peerConnection.close();
+    }
+    if (socket) {
+      socket.close();
+    }
+  });
+
+  // -------------------- Event Bindings --------------------
+  connectBtn.addEventListener('click', connectWebSocket);
+  disconnectBtn.addEventListener('click', disconnectWebSocket);
+  callBtn.addEventListener('click', handleCall);
+  hangupBtn.addEventListener('click', hangupButtonHandler);
+  muteMicBtn.addEventListener('click', toggleMuteMic);
+  disableCamBtn.addEventListener('click', toggleCamera);
+  clearLogBtn.addEventListener('click', clearLog);
+
+  // Optional: if user changes ID while connected, warn
+  userIdInput.addEventListener('change', () => {
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      appendLog('⚠️ User ID changed while connected. Disconnect and reconnect to apply.');
+    }
+  });
+
+  // initial log
+  appendLog('🚀 Ready. Enter user ID, connect, then call another user (with same server running).');
+  appendLog('💡 Tip: Open two browser tabs with different user IDs (e.g. alice & bob).');
+
+  // -------------------- Simple STT -> AI -> TTS --------------------
+  const startSttBtn = document.getElementById('startSttBtn');
+  const transcriptDiv = document.getElementById('transcript');
+  const aiReplyDiv = document.getElementById('aiReply');
+  const aiBtn = document.getElementById('aiBtn');
+  const voiceSelect = document.getElementById('voiceSelect');
+  const rateRange = document.getElementById('rateRange');
+  const pitchRange = document.getElementById('pitchRange');
+
+  let recognition = null;
+  let availableVoices = [];
+  const VOICE_STORAGE_KEY = 'ralph.tts.voice';
+  const RATE_STORAGE_KEY = 'ralph.tts.rate';
+  const PITCH_STORAGE_KEY = 'ralph.tts.pitch';
+
+  function loadTtsPreferences() {
+    const storedRate = Number(localStorage.getItem(RATE_STORAGE_KEY));
+    const storedPitch = Number(localStorage.getItem(PITCH_STORAGE_KEY));
+    const storedVoice = localStorage.getItem(VOICE_STORAGE_KEY);
+
+    if (!Number.isNaN(storedRate) && storedRate > 0) {
+      rateRange.value = String(storedRate);
+    }
+    if (!Number.isNaN(storedPitch) && storedPitch > 0) {
+      pitchRange.value = String(storedPitch);
+    }
+    if (storedVoice) {
+      voiceSelect.dataset.selectedVoice = storedVoice;
+    }
+  }
+
+  function saveTtsPreferences() {
+    localStorage.setItem(RATE_STORAGE_KEY, rateRange.value);
+    localStorage.setItem(PITCH_STORAGE_KEY, pitchRange.value);
+    if (voiceSelect.value) {
+      localStorage.setItem(VOICE_STORAGE_KEY, voiceSelect.value);
+    }
+  }
+
+  function scoreVoice(voice) {
+    const name = (voice.name || '').toLowerCase();
+    const lang = (voice.lang || '').toLowerCase();
+    let score = 0;
+    if (lang.startsWith('en-')) score += 50;
+    if (lang === 'en-us') score += 30;
+    if (lang === 'en-gb') score += 20;
+    if (name.includes('natural')) score += 25;
+    if (name.includes('neural')) score += 20;
+    if (name.includes('enhanced')) score += 15;
+    if (name.includes('premium')) score += 10;
+    if (name.includes('female') || name.includes('woman')) score += 4;
+    if (name.includes('male') || name.includes('man')) score += 2;
+    if (!voice.default) score += 5;
+    return score;
+  }
+
+  function populateVoiceSelect() {
+    if (!window.speechSynthesis) return;
+    const voices = window.speechSynthesis.getVoices();
+    if (!voices || voices.length === 0) return;
+
+    availableVoices = voices.slice().sort((a, b) => scoreVoice(b) - scoreVoice(a));
+    const selectedVoice = voiceSelect.value || voiceSelect.dataset.selectedVoice || localStorage.getItem(VOICE_STORAGE_KEY);
+
+    voiceSelect.innerHTML = '';
+    const autoOption = document.createElement('option');
+    autoOption.value = '';
+    autoOption.textContent = 'Auto-select best voice';
+    voiceSelect.appendChild(autoOption);
+
+    availableVoices.forEach((voice) => {
+      const option = document.createElement('option');
+      option.value = voice.name;
+      option.textContent = `${voice.name} (${voice.lang})${voice.default ? ' • default' : ''}`;
+      voiceSelect.appendChild(option);
+    });
+
+    if (selectedVoice && [...voiceSelect.options].some((option) => option.value === selectedVoice)) {
+      voiceSelect.value = selectedVoice;
+    } else {
+      voiceSelect.value = '';
+    }
+  }
+
+  function chooseBestVoice() {
+    const selected = voiceSelect.value;
+    if (selected) {
+      return availableVoices.find((voice) => voice.name === selected) || null;
+    }
+
+    const englishVoices = availableVoices.filter((voice) => (voice.lang || '').toLowerCase().startsWith('en-'));
+    const candidatePool = englishVoices.length ? englishVoices : availableVoices;
+    if (candidatePool.length === 0) {
+      return null;
+    }
+    return candidatePool.slice().sort((a, b) => scoreVoice(b) - scoreVoice(a))[0];
+  }
+
+  function getSttErrorHint(errorCode) {
+    if (errorCode === 'network') {
+      if (!navigator.onLine) {
+        return 'No internet connection detected for browser speech service.';
+      }
+      return 'Browser speech service is unreachable. This is separate from Ollama and often caused by network/proxy/firewall restrictions.';
+    }
+    if (errorCode === 'not-allowed') {
+      return 'Microphone permission is blocked in the browser.';
+    }
+    if (errorCode === 'audio-capture') {
+      return 'No usable microphone was found by the browser.';
+    }
+    if (errorCode === 'no-speech') {
+      return 'No speech was detected. Try speaking closer to the mic.';
+    }
+    return 'Speech recognition failed.';
+  }
+
+  if (window.SpeechRecognition || window.webkitSpeechRecognition) {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    recognition = new SR();
+    recognition.lang = 'en-US';
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+    recognition.continuous = true;
+    recognition.onresult = async (event) => {
+      const text = event.results[0][0].transcript;
+      transcriptDiv.textContent = text;
+      await sendToAI(text);
+    };
+    recognition.onerror = (e) => {
+      recognitionRunning = false;
+      const hint = getSttErrorHint(e.error);
+      appendLog(`STT error: ${e.error}. ${hint}`);
+      if (e.error === 'network') {
+        appendLog('Fallback: type your prompt in the transcript box, then click Ask AI.');
+      }
+    };
+    recognition.onend = () => {
+      recognitionRunning = false;
+      appendLog('🎧 STT session ended.');
+      if (aiCallActive) {
+        window.setTimeout(startListeningSession, 250);
+      }
+    };
+  } else {
+    startSttBtn.disabled = true;
+    startSttBtn.textContent = 'STT not supported';
+    appendLog('STT unavailable in this browser. Type in the transcript box and click Ask AI.');
+  }
+
+  loadTtsPreferences();
+  populateVoiceSelect();
+  if (window.speechSynthesis) {
+    window.speechSynthesis.onvoiceschanged = populateVoiceSelect;
+  }
+
+  voiceSelect.addEventListener('change', () => {
+    saveTtsPreferences();
+  });
+  rateRange.addEventListener('change', saveTtsPreferences);
+  pitchRange.addEventListener('change', saveTtsPreferences);
+
+  startSttBtn.addEventListener('click', () => {
+    if (!recognition) return;
+    if (aiCallActive) {
+      stopAiCall();
+      return;
+    }
+    startAiCall();
+  });
+
+  aiBtn.addEventListener('click', async () => {
+    const text = transcriptDiv.textContent.trim();
+    if (!text) {
+      alert('No transcript to send. Start the AI call first.');
+      return;
+    }
+    await sendToAI(text);
+  });
+
+  async function sendToAI(text) {
+    aiReplyDiv.textContent = '…';
+    try {
+      const resp = await fetch(`${getApiBaseUrl()}/api/chat`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({text})
+      });
+      if (!resp.ok) {
+        const err = await resp.text();
+        appendLog('AI error: ' + err);
+        aiReplyDiv.textContent = 'Error: ' + err;
+        return;
+      }
+      const data = await resp.json();
+      const reply = data.reply || '';
+      aiReplyDiv.textContent = reply;
+      speakText(reply);
+    } catch (err) {
+      appendLog('AI request failed: ' + err.message);
+      aiReplyDiv.textContent = 'Request failed';
+    }
+  }
+
+  function speakText(text) {
+    if (!window.speechSynthesis) return;
+    const ut = new SpeechSynthesisUtterance(text);
+    ut.lang = 'en-US';
+    ut.rate = Number(rateRange.value) || 0.95;
+    ut.pitch = Number(pitchRange.value) || 1.03;
+    ut.volume = 1;
+
+    const chosenVoice = chooseBestVoice();
+    if (chosenVoice) {
+      ut.voice = chosenVoice;
+      ut.lang = chosenVoice.lang || ut.lang;
+    }
+
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(ut);
+    appendLog(`🔊 Speaking with ${chosenVoice ? chosenVoice.name : 'auto voice'} at rate ${ut.rate} and pitch ${ut.pitch}`);
+  }
+</script>
+</body>
+</html>

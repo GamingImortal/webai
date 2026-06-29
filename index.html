@@ -1,0 +1,1043 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>RALPH - SIRDC AI Assistant</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --panel: #111827;
+      --muted: #94a3b8;
+      --text: #e5e7eb;
+      --accent: #3b82f6;
+      --accent-hover: #2563eb;
+      --border: #1f2937;
+      --success: #22c55e;
+      --danger: #ef4444;
+      --call-glow: #22d3ee;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: radial-gradient(circle at top right, #1e293b 0%, var(--bg) 45%, #020617 100%);
+      color: var(--text);
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 20px;
+    }
+
+    .app {
+      width: min(900px, 100%);
+      background: rgba(17, 24, 39, 0.94);
+      backdrop-filter: blur(2px);
+      border: 1px solid var(--border);
+      border-radius: 28px;
+      padding: 32px;
+      display: grid;
+      gap: 20px;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.6);
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    h1 {
+      font-size: 1.8rem;
+      letter-spacing: -0.3px;
+      background: linear-gradient(135deg, #f0f9ff, #86efac);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .badge {
+      background: #1e293b;
+      padding: 4px 14px;
+      border-radius: 40px;
+      font-size: 0.7rem;
+      font-weight: 500;
+      color: var(--muted);
+    }
+
+    .status-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+      background: rgba(2, 6, 23, 0.6);
+      border: 1px dashed var(--border);
+      border-radius: 40px;
+      padding: 10px 20px;
+      font-size: 0.85rem;
+    }
+
+    .status-bar .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      display: inline-block;
+      margin-right: 6px;
+    }
+
+    .status-dot.ready { background: var(--success); }
+    .status-dot.thinking { background: var(--accent); animation: pulse 1s infinite; }
+    .status-dot.error { background: var(--danger); }
+    .status-dot.inactive { background: var(--muted); }
+    .status-dot.call-active { background: var(--call-glow); animation: pulse-call 0.8s infinite; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
+    @keyframes pulse-call {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(1.2); }
+    }
+
+    /* Mode Selection Buttons */
+    .mode-selector {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .mode-btn {
+      border-radius: 16px;
+      border: 2px solid var(--border);
+      background: #0b1220;
+      color: var(--muted);
+      padding: 16px 20px;
+      font-size: 1.1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+    }
+
+    .mode-btn:hover {
+      border-color: var(--muted);
+      color: var(--text);
+    }
+
+    .mode-btn.active-text {
+      border-color: var(--accent);
+      background: rgba(59, 130, 246, 0.15);
+      color: var(--accent);
+      box-shadow: 0 0 30px rgba(59, 130, 246, 0.1);
+    }
+
+    .mode-btn.active-call {
+      border-color: var(--call-glow);
+      background: rgba(34, 211, 238, 0.15);
+      color: var(--call-glow);
+      box-shadow: 0 0 30px rgba(34, 211, 238, 0.15);
+      animation: glow-pulse 1.5s infinite;
+    }
+
+    @keyframes glow-pulse {
+      0%, 100% { box-shadow: 0 0 30px rgba(34, 211, 238, 0.1); }
+      50% { box-shadow: 0 0 60px rgba(34, 211, 238, 0.25); }
+    }
+
+    .mode-btn .icon {
+      font-size: 1.4rem;
+    }
+
+    /* Call Section */
+    .call-section {
+      background: linear-gradient(135deg, #0b1220, #111827);
+      border-radius: 24px;
+      padding: 24px;
+      border: 1px solid var(--border);
+      text-align: center;
+      display: none;
+    }
+
+    .call-section.active {
+      display: block;
+    }
+
+    .call-section .call-status {
+      font-size: 0.9rem;
+      color: var(--muted);
+      margin-bottom: 12px;
+    }
+
+    .call-section .call-status.active {
+      color: var(--call-glow);
+    }
+
+    .call-btn {
+      border-radius: 60px;
+      border: none;
+      padding: 18px 48px;
+      font-size: 1.2rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      background: linear-gradient(135deg, var(--accent), var(--accent-hover));
+      color: white;
+      box-shadow: 0 4px 30px rgba(59, 130, 246, 0.3);
+    }
+
+    .call-btn:hover {
+      transform: scale(1.03);
+      box-shadow: 0 6px 40px rgba(59, 130, 246, 0.4);
+    }
+
+    .call-btn:active {
+      transform: scale(0.97);
+    }
+
+    .call-btn.in-call {
+      background: linear-gradient(135deg, #dc2626, var(--danger));
+      box-shadow: 0 4px 30px rgba(239, 68, 68, 0.3);
+      animation: pulse-ring 1.5s infinite;
+    }
+
+    .call-btn.in-call:hover {
+      transform: scale(1.03);
+    }
+
+    .call-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none !important;
+    }
+
+    @keyframes pulse-ring {
+      0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+      70% { box-shadow: 0 0 0 15px rgba(239, 68, 68, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+    }
+
+    .call-timer {
+      font-size: 1.2rem;
+      font-weight: 600;
+      color: var(--call-glow);
+      margin-top: 12px;
+      font-variant-numeric: tabular-nums;
+      min-height: 30px;
+    }
+
+    /* Chat Section */
+    .chat-section {
+      display: none;
+    }
+
+    .chat-section.active {
+      display: block;
+    }
+
+    .chat-container {
+      background: #0b1220;
+      border-radius: 24px;
+      padding: 20px;
+      border: 1px solid var(--border);
+      min-height: 300px;
+      max-height: 450px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .message {
+      padding: 12px 18px;
+      border-radius: 16px;
+      max-width: 85%;
+      word-wrap: break-word;
+      animation: fadeIn 0.3s ease;
+    }
+
+    .message.user {
+      background: var(--accent);
+      color: white;
+      align-self: flex-end;
+      border-bottom-right-radius: 4px;
+    }
+
+    .message.assistant {
+      background: #1e293b;
+      color: var(--text);
+      align-self: flex-start;
+      border-bottom-left-radius: 4px;
+    }
+
+    .message.assistant .thinking {
+      color: var(--muted);
+      font-style: italic;
+    }
+
+    .message.system {
+      background: #1e1b4b;
+      color: #a5b4fc;
+      align-self: center;
+      font-size: 0.85rem;
+      max-width: 95%;
+      text-align: center;
+      border-radius: 12px;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .input-area {
+      display: flex;
+      gap: 12px;
+      align-items: flex-end;
+      margin-top: 12px;
+    }
+
+    .input-area .field {
+      flex: 1;
+    }
+
+    .input-area label {
+      display: block;
+      font-size: 0.7rem;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+
+    .input-area input {
+      background: #020617;
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 10px 16px;
+      color: white;
+      width: 100%;
+      outline: none;
+      font-size: 0.95rem;
+    }
+
+    .input-area input:focus {
+      border-color: var(--accent);
+    }
+
+    .input-area input:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .btn-primary {
+      border-radius: 40px;
+      border: none;
+      background: linear-gradient(135deg, var(--accent), var(--accent-hover));
+      color: white;
+      font-weight: 600;
+      padding: 10px 28px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      font-size: 0.95rem;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      white-space: nowrap;
+      min-height: 44px;
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      transform: scale(1.02);
+      box-shadow: 0 4px 20px rgba(59, 130, 246, 0.3);
+    }
+
+    .btn-primary:active:not(:disabled) {
+      transform: scale(0.96);
+    }
+
+    .btn-primary:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .btn-secondary {
+      border-radius: 40px;
+      border: none;
+      background: #1f2937;
+      color: white;
+      font-weight: 600;
+      padding: 10px 20px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      font-size: 0.85rem;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn-secondary:hover:not(:disabled) {
+      background: #374151;
+    }
+
+    .btn-secondary:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      justify-content: center;
+      margin-top: 8px;
+    }
+
+    .log {
+      background: #020617;
+      border-radius: 16px;
+      padding: 12px 16px;
+      max-height: 80px;
+      overflow: auto;
+      font-family: 'Fira Code', monospace;
+      font-size: 0.7rem;
+      border: 1px solid var(--border);
+      white-space: pre-wrap;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    .recording-indicator {
+      display: none;
+      color: var(--danger);
+      font-weight: 600;
+      animation: pulse 0.5s infinite;
+    }
+
+    .recording-indicator.active {
+      display: inline;
+    }
+
+    /* Hidden voice controls */
+    .voice-controls {
+      display: none !important;
+    }
+
+    @media (max-width: 720px) {
+      .app { padding: 16px; }
+      .mode-selector { grid-template-columns: 1fr 1fr; }
+      .input-area { flex-direction: column; }
+      .btn-primary { width: 100%; justify-content: center; }
+      .call-btn { width: 100%; justify-content: center; padding: 16px 24px; }
+      .status-bar { flex-direction: column; align-items: flex-start; }
+    }
+  </style>
+</head>
+<body>
+<main class="app">
+  <div class="header">
+    <h1>
+      🤖 RALPH
+      <span class="badge">SIRDC Assistant</span>
+    </h1>
+  </div>
+
+  <div class="status-bar" id="statusBar">
+    <span>
+      <span class="status-dot ready" id="statusDot"></span>
+      Status: <strong id="statusText">Ready</strong>
+    </span>
+    <span id="modelStatus" style="color: var(--muted); font-weight: normal;">(Ollama: checking...)</span>
+    <span class="recording-indicator" id="recordingIndicator">🔴 Recording...</span>
+  </div>
+
+  <!-- Mode Selector -->
+  <div class="mode-selector">
+    <button id="textModeBtn" class="mode-btn active-text">
+      <span class="icon">💬</span> Text RALPH
+    </button>
+    <button id="callModeBtn" class="mode-btn">
+      <span class="icon">📞</span> Call RALPH
+    </button>
+  </div>
+
+  <!-- CALL SECTION -->
+  <div class="call-section" id="callSection">
+    <div class="call-status" id="callStatus">
+      📞 Tap the button below to start a voice call with RALPH
+    </div>
+    <button id="callBtn" class="call-btn">
+      📞 Call RALPH
+    </button>
+    <div class="call-timer" id="callTimer"></div>
+  </div>
+
+  <!-- CHAT SECTION -->
+  <div class="chat-section active" id="chatSection">
+    <div class="chat-container" id="chatContainer">
+      <div class="message assistant">
+        👋 Hello! I'm <strong>RALPH</strong>, your SIRDC assistant. Ask me anything about the Scientific and Industrial Research and Development Centre, its clusters, training programs, products, or services.
+      </div>
+    </div>
+
+    <div class="input-area">
+      <div class="field">
+        <label for="userInput">💬 Your question</label>
+        <input id="userInput" placeholder="e.g., What training courses does SIRDC offer?" />
+      </div>
+      <button id="sendBtn" class="btn-primary">🚀 Ask</button>
+    </div>
+
+    <div class="controls">
+      <button id="clearChatBtn" class="btn-secondary">🧹 Clear Chat</button>
+      <button id="micBtn" class="btn-secondary">🎙️ Voice Input</button>
+    </div>
+  </div>
+
+  <!-- LOG -->
+  <div>
+    <div style="font-size:0.7rem; margin-bottom:4px; color: var(--muted);">📡 Activity Log</div>
+    <div class="log" id="log">🚀 Ready. Ask me anything about SIRDC!</div>
+  </div>
+</main>
+
+<script>
+  // ============================================================
+  // DOM Elements
+  // ============================================================
+  const userInput = document.getElementById('userInput');
+  const sendBtn = document.getElementById('sendBtn');
+  const clearChatBtn = document.getElementById('clearChatBtn');
+  const micBtn = document.getElementById('micBtn');
+  const chatContainer = document.getElementById('chatContainer');
+  const statusText = document.getElementById('statusText');
+  const statusDot = document.getElementById('statusDot');
+  const modelStatus = document.getElementById('modelStatus');
+  const logDiv = document.getElementById('log');
+  const callBtn = document.getElementById('callBtn');
+  const callStatus = document.getElementById('callStatus');
+  const callTimer = document.getElementById('callTimer');
+  const recordingIndicator = document.getElementById('recordingIndicator');
+  const textModeBtn = document.getElementById('textModeBtn');
+  const callModeBtn = document.getElementById('callModeBtn');
+  const chatSection = document.getElementById('chatSection');
+  const callSection = document.getElementById('callSection');
+
+  // ============================================================
+  // State
+  // ============================================================
+  let isProcessing = false;
+  let isCallActive = false;
+  let callStartTime = null;
+  let callInterval = null;
+  let recognition = null;
+  let isSpeaking = false;
+  let currentMode = 'text';
+  let defaultVoiceName = 'Microsoft Brian Online (Natural) - English (United States)';
+  let ttsReady = false;
+
+  // ============================================================
+  // Helpers
+  // ============================================================
+  function getApiBaseUrl() {
+    const origin = window.location.origin;
+    if (origin && origin !== 'null' && origin !== 'file://') {
+      return origin;
+    }
+    return 'http://127.0.0.1:8000';
+  }
+
+  function appendLog(message) {
+    const time = new Date().toLocaleTimeString();
+    logDiv.textContent = `[${time}] ${message}\n` + logDiv.textContent;
+    if (logDiv.textContent.length > 2000) {
+      logDiv.textContent = logDiv.textContent.slice(0, 2000);
+    }
+  }
+
+  function setStatus(text, type = 'ready') {
+    statusText.textContent = text;
+    statusDot.className = 'status-dot';
+    if (type === 'ready') statusDot.classList.add('ready');
+    else if (type === 'thinking') statusDot.classList.add('thinking');
+    else if (type === 'error') statusDot.classList.add('error');
+    else if (type === 'call') statusDot.classList.add('call-active');
+    else statusDot.classList.add('inactive');
+  }
+
+  function addMessage(text, sender) {
+    const div = document.createElement('div');
+    div.className = `message ${sender}`;
+    div.textContent = text;
+    chatContainer.appendChild(div);
+    chatContainer.scrollTop = chatContainer.scrollHeight;
+  }
+
+  function addThinkingMessage() {
+    const div = document.createElement('div');
+    div.className = 'message assistant';
+    div.id = 'thinkingMessage';
+    div.innerHTML = '<span class="thinking">🤔 Thinking...</span>';
+    chatContainer.appendChild(div);
+    chatContainer.scrollTop = chatContainer.scrollHeight;
+    return div;
+  }
+
+  function removeThinkingMessage() {
+    const el = document.getElementById('thinkingMessage');
+    if (el) el.remove();
+  }
+
+  function formatTime(seconds) {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  }
+
+  // ============================================================
+  // Mode Switching
+  // ============================================================
+  function switchMode(mode) {
+    currentMode = mode;
+    
+    if (mode === 'text') {
+      textModeBtn.className = 'mode-btn active-text';
+      callModeBtn.className = 'mode-btn';
+      chatSection.classList.add('active');
+      callSection.classList.remove('active');
+      if (isCallActive) {
+        endCall();
+      }
+    } else {
+      callModeBtn.className = 'mode-btn active-call';
+      textModeBtn.className = 'mode-btn';
+      chatSection.classList.remove('active');
+      callSection.classList.add('active');
+    }
+  }
+
+  // ============================================================
+  // TTS - Fixed to Microsoft Brian
+  // ============================================================
+  function findBrianVoice() {
+    const voices = window.speechSynthesis.getVoices();
+    // Look for Microsoft Brian
+    let brian = voices.find(v => 
+      v.name && (
+        v.name.toLowerCase().includes('brian') ||
+        v.name.toLowerCase().includes('microsoft brian')
+      )
+    );
+    // If Brian not found, look for any Microsoft voice
+    if (!brian) {
+      brian = voices.find(v => 
+        v.name && v.name.toLowerCase().includes('microsoft')
+      );
+    }
+    // If still not found, use any English voice
+    if (!brian) {
+      brian = voices.find(v => 
+        v.lang && v.lang.startsWith('en-')
+      );
+    }
+    return brian || null;
+  }
+
+  function speakText(text, callback) {
+    if (!window.speechSynthesis || !text) {
+      if (callback) callback();
+      return;
+    }
+
+    window.speechSynthesis.cancel();
+
+    const ut = new SpeechSynthesisUtterance(text);
+    ut.lang = 'en-US';
+    ut.rate = 0.99; // Fixed speed 75%
+    ut.pitch = 1.0;
+    ut.volume = 1;
+
+    // Try to find Brian voice
+    const brianVoice = findBrianVoice();
+    if (brianVoice) {
+      ut.voice = brianVoice;
+      ut.lang = brianVoice.lang || 'en-US';
+      appendLog(`🔊 Speaking with ${brianVoice.name}`);
+    } else {
+      appendLog('🔊 Speaking with default voice (Brian not available)');
+    }
+
+    isSpeaking = true;
+    ut.onend = () => {
+      isSpeaking = false;
+      if (callback) callback();
+    };
+    ut.onerror = () => {
+      isSpeaking = false;
+      if (callback) callback();
+    };
+
+    window.speechSynthesis.speak(ut);
+  }
+
+  // Pre-load voices and set Brian as default
+  function initTTS() {
+    if (!window.speechSynthesis) {
+      appendLog('⚠️ Speech synthesis not available');
+      return;
+    }
+
+    // Try to get voices immediately
+    let voices = window.speechSynthesis.getVoices();
+    if (voices.length > 0) {
+      const brian = findBrianVoice();
+      if (brian) {
+        appendLog(`✅ Default voice: ${brian.name}`);
+      } else {
+        appendLog('⚠️ Brian voice not found, using default');
+      }
+      ttsReady = true;
+      return;
+    }
+
+    // If voices not loaded yet, wait for them
+    window.speechSynthesis.onvoiceschanged = () => {
+      const voices = window.speechSynthesis.getVoices();
+      const brian = findBrianVoice();
+      if (brian) {
+        appendLog(`✅ Default voice: ${brian.name}`);
+      } else {
+        appendLog('⚠️ Brian voice not found, using default');
+      }
+      ttsReady = true;
+    };
+  }
+
+  // ============================================================
+  // Check Ollama Status
+  // ============================================================
+  async function checkOllamaStatus() {
+    try {
+      const resp = await fetch(`${getApiBaseUrl()}/api/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: 'ping' })
+      });
+      if (resp.ok) {
+        modelStatus.textContent = '✅ Ollama ready';
+        modelStatus.style.color = '#4ade80';
+      } else {
+        modelStatus.textContent = '⚠️ Ollama issue';
+        modelStatus.style.color = '#facc15';
+        appendLog('⚠️ Ollama responded with error');
+      }
+    } catch (e) {
+      modelStatus.textContent = '❌ Ollama unavailable';
+      modelStatus.style.color = '#f87171';
+      appendLog('❌ Cannot reach Ollama. Make sure it\'s running on port 11434');
+    }
+  }
+
+  // ============================================================
+  // Send to AI (text)
+  // ============================================================
+  async function sendToAI(text, isVoiceQuery = false) {
+    if (!text || !text.trim()) return;
+    if (isProcessing) return;
+
+    isProcessing = true;
+    sendBtn.disabled = true;
+    sendBtn.textContent = '⏳ Thinking...';
+    setStatus('Thinking...', 'thinking');
+
+    if (!isVoiceQuery) {
+      addMessage(text, 'user');
+    }
+    userInput.value = '';
+    userInput.focus();
+
+    addThinkingMessage();
+
+    try {
+      const resp = await fetch(`${getApiBaseUrl()}/api/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: text.trim() })
+      });
+
+      removeThinkingMessage();
+
+      if (!resp.ok) {
+        const err = await resp.text();
+        addMessage(`Error: ${err}`, 'assistant');
+        appendLog(`AI error: ${err}`);
+        setStatus('Error', 'error');
+        return;
+      }
+
+      const data = await resp.json();
+      const reply = data.reply || 'No response received.';
+      addMessage(reply, 'assistant');
+      appendLog(`✅ Response received (${data.retrieved || 0} documents retrieved)`);
+      setStatus('Ready', 'ready');
+
+      speakText(reply);
+
+    } catch (err) {
+      removeThinkingMessage();
+      addMessage(`Error: ${err.message}`, 'assistant');
+      appendLog(`Request failed: ${err.message}`);
+      setStatus('Error', 'error');
+    } finally {
+      isProcessing = false;
+      sendBtn.disabled = false;
+      sendBtn.textContent = '🚀 Ask';
+    }
+  }
+
+  // ============================================================
+  // Voice Call System
+  // ============================================================
+  function startCall() {
+    if (isCallActive) return;
+    if (!recognition) {
+      appendLog('❌ Speech recognition not available');
+      return;
+    }
+
+    isCallActive = true;
+    callStartTime = Date.now();
+
+    callBtn.textContent = '🔴 End Call';
+    callBtn.className = 'call-btn in-call';
+    callStatus.textContent = '🔴 Live conversation with RALPH...';
+    callStatus.className = 'call-status active';
+    recordingIndicator.classList.add('active');
+    setStatus('In call', 'call');
+    callModeBtn.className = 'mode-btn active-call';
+
+    callInterval = setInterval(() => {
+      const elapsed = (Date.now() - callStartTime) / 1000;
+      callTimer.textContent = `⏱️ ${formatTime(elapsed)}`;
+    }, 1000);
+
+    startListening();
+    appendLog('📞 Call started with RALPH');
+  }
+
+  function endCall() {
+    if (!isCallActive) return;
+
+    isCallActive = false;
+
+    if (recognition && recognition.running) {
+      try { recognition.stop(); } catch (e) {}
+    }
+
+    if (callInterval) {
+      clearInterval(callInterval);
+      callInterval = null;
+    }
+
+    callBtn.textContent = '📞 Call RALPH';
+    callBtn.className = 'call-btn';
+    callStatus.textContent = '📞 Tap the button below to start a voice call with RALPH';
+    callStatus.className = 'call-status';
+    callTimer.textContent = '';
+    recordingIndicator.classList.remove('active');
+
+    if (window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+    }
+
+    appendLog('📞 Call ended');
+    setStatus('Ready', 'ready');
+    callModeBtn.className = 'mode-btn';
+  }
+
+  function startListening() {
+    if (!recognition || !isCallActive) return;
+    if (recognition.running) return;
+
+    try {
+      recognition.start();
+      appendLog('🎤 Listening...');
+    } catch (e) {
+      appendLog(`Error starting listening: ${e.message}`);
+    }
+  }
+
+  function setupSpeechRecognition() {
+    if (!window.SpeechRecognition && !window.webkitSpeechRecognition) {
+      micBtn.disabled = true;
+      micBtn.textContent = '🎙️ Not Supported';
+      callBtn.disabled = true;
+      appendLog('Speech recognition not available in this browser');
+      return;
+    }
+
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    recognition = new SR();
+    recognition.lang = 'en-US';
+    recognition.interimResults = true;
+    recognition.continuous = true;
+    recognition.maxAlternatives = 1;
+
+    recognition.onresult = async (event) => {
+      let finalText = '';
+      let interimText = '';
+
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        if (event.results[i].isFinal) {
+          finalText += event.results[i][0].transcript;
+        } else {
+          interimText += event.results[i][0].transcript;
+        }
+      }
+
+      if (interimText) {
+        userInput.value = interimText;
+      }
+
+      if (finalText) {
+        const query = finalText.trim();
+        userInput.value = query;
+        appendLog(`🎤 Heard: "${query}"`);
+        addMessage(query, 'user');
+        await sendToAI(query, true);
+
+        if (isCallActive) {
+          setTimeout(() => {
+            if (isCallActive && !isSpeaking) {
+              startListening();
+            }
+          }, 500);
+        }
+      }
+    };
+
+    recognition.onerror = (e) => {
+      if (e.error === 'not-allowed') {
+        appendLog('Microphone permission denied');
+        if (isCallActive) endCall();
+      } else if (e.error === 'no-speech') {
+        if (isCallActive) {
+          setTimeout(startListening, 500);
+        }
+      } else if (e.error !== 'aborted') {
+        appendLog(`STT error: ${e.error}`);
+        if (isCallActive) {
+          setTimeout(startListening, 1000);
+        }
+      }
+    };
+
+    recognition.onend = () => {
+      if (isCallActive && !isSpeaking) {
+        setTimeout(startListening, 500);
+      }
+    };
+  }
+
+  // ============================================================
+  // Toggle Voice Input (manual mic button)
+  // ============================================================
+  function toggleVoiceInput() {
+    if (!recognition) return;
+
+    if (recognition.running) {
+      recognition.stop();
+      micBtn.textContent = '🎙️ Voice Input';
+      micBtn.style.background = '#1f2937';
+      recordingIndicator.classList.remove('active');
+      return;
+    }
+
+    micBtn.textContent = '⏹️ Stop';
+    micBtn.style.background = '#ef4444';
+    recordingIndicator.classList.add('active');
+    userInput.value = '';
+    userInput.placeholder = '🎤 Listening...';
+    try {
+      recognition.start();
+      appendLog('🎤 Listening...');
+    } catch (e) {
+      micBtn.textContent = '🎙️ Voice Input';
+      micBtn.style.background = '#1f2937';
+      recordingIndicator.classList.remove('active');
+      userInput.placeholder = 'Type your question...';
+      appendLog(`Error starting STT: ${e.message}`);
+    }
+  }
+
+  // ============================================================
+  // Event Bindings
+  // ============================================================
+  textModeBtn.addEventListener('click', () => switchMode('text'));
+  callModeBtn.addEventListener('click', () => switchMode('call'));
+
+  sendBtn.addEventListener('click', () => {
+    if (isCallActive) {
+      appendLog('⚠️ In a call - use voice or end the call to type');
+      return;
+    }
+    sendToAI(userInput.value);
+  });
+
+  userInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      if (isCallActive) {
+        appendLog('⚠️ In a call - use voice or end the call to type');
+        return;
+      }
+      sendToAI(userInput.value);
+    }
+  });
+
+  callBtn.addEventListener('click', () => {
+    if (isCallActive) {
+      endCall();
+    } else {
+      startCall();
+    }
+  });
+
+  clearChatBtn.addEventListener('click', () => {
+    chatContainer.innerHTML = `
+      <div class="message assistant">
+        👋 Hello! I'm <strong>RALPH</strong>, your SIRDC assistant. Ask me anything about the Scientific and Industrial Research and Development Centre, its clusters, training programs, products, or services.
+      </div>
+    `;
+    appendLog('🧹 Chat cleared');
+  });
+
+  micBtn.addEventListener('click', toggleVoiceInput);
+
+  // ============================================================
+  // Init
+  // ============================================================
+  initTTS();
+  setupSpeechRecognition();
+  checkOllamaStatus();
+  setInterval(checkOllamaStatus, 30000);
+
+  appendLog('🚀 RALPH is ready! Ask me anything about SIRDC.');
+</script>
+</body>
+</html>
