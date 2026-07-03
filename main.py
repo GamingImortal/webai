@@ -1,7 +1,7 @@
 import sys
 from pathlib import Path
 from typing import Dict
-
+import asyncio  # ADDED: For retry delays
 
 def ensure_virtual_environment() -> None:
     if sys.prefix == sys.base_prefix:
@@ -10,19 +10,19 @@ def ensure_virtual_environment() -> None:
             "Use .\\run.ps1 from the project root."
         )
 
-
 ensure_virtual_environment()
 
 import os
+import re
 from fastapi import (
     FastAPI,
     WebSocket,
     WebSocketDisconnect,
     Request,
     HTTPException,
-)  # noqa: E402
-from fastapi.responses import FileResponse, JSONResponse  # noqa: E402
-from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
+)
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 import httpx
 from dotenv import load_dotenv
 import json
@@ -62,6 +62,11 @@ app = FastAPI()
 BASE_DIR = Path(__file__).resolve().parent
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
 _AUTO_OLLAMA_MODEL: str | None = None
+
+PREFERRED_OLLAMA_MODELS = (
+    "llama3.2:3b",
+    "llama3.2",
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -1322,8 +1327,99 @@ New or under-documented website facts:
 - The current publications and management pages reinforce that SIRDC is actively packaging its products/services into e-books, promotional materials, and commercial registration pages
 Important limitation:
 - the direct ZTS landing pages discovered through indexing were sparse during this crawl and did not expose much descriptive text beyond headings and navigation structure.
-"""},{"text":""""""},{"text":""""""},{"text":""""""},{"text":""""""},{"text":""""""},{"text":""""""},
+"""},
 ]
+
+# ============================================
+# FIX: Helper functions for greeting detection
+# ============================================
+
+# Greeting responses cache
+GREETING_RESPONSES = {
+    "hi": "Hello! I'm RALPH, your SIRDC assistant. How can I help you today?",
+    "hello": "Hello! I'm RALPH, your SIRDC assistant. How can I help you today?",
+    "hey": "Hey there! I'm RALPH. What can I help you with about SIRDC?",
+    "how are you": "I'm doing great, thanks for asking! How can I assist you today?",
+    "how are you doing": "I'm doing great, thanks for asking! How can I assist you today?",
+    "what's up": "Not much, just here to help! What can I do for you?",
+    "whats up": "Not much, just here to help! What can I do for you?",
+    "good morning": "Good morning! How can I assist you today?",
+    "good afternoon": "Good afternoon! How can I help you with SIRDC?",
+    "good evening": "Good evening! What can I help you with?",
+    "thanks": "You're welcome! Is there anything else I can help you with?",
+    "thank you": "You're welcome! Let me know if you need anything else.",
+    "bye": "Goodbye! Feel free to come back if you have more questions about SIRDC.",
+    "goodbye": "Goodbye! Have a great day!",
+    "ping": "Pong! I'm here and ready to help.",
+}
+
+SIMPLE_RESPONSES = {
+    "whats your name": "I'm RALPH, your SIRDC assistant.",
+    "what is your name": "I'm RALPH, your SIRDC assistant.",
+    "who are you": "I'm RALPH, your SIRDC assistant for SIRDC questions.",
+    "what can you do": "I can answer questions about SIRDC, its clusters, services, products, training, and related topics.",
+    "help": "I can answer questions about SIRDC, its clusters, services, products, training, and related topics.",
+    "thanks": "You're welcome!",
+    "thank you": "You're welcome!",
+}
+
+def normalize_query(query: str) -> str:
+    """Normalize user text for simple cache lookups."""
+    lowered = query.lower().strip()
+    lowered = lowered.replace("'", "")
+    lowered = re.sub(r"[^a-z0-9\s]", " ", lowered)
+    lowered = re.sub(r"\s+", " ", lowered).strip()
+    return lowered
+
+def is_greeting(query: str) -> bool:
+    """Check if query is a greeting or chit-chat"""
+    query_lower = normalize_query(query)
+    if query_lower in GREETING_RESPONSES:
+        return True
+    return False
+
+def get_greeting_response(query: str) -> str | None:
+    """Get cached greeting response"""
+    query_lower = normalize_query(query)
+    return GREETING_RESPONSES.get(query_lower)
+
+def get_simple_response(query: str) -> str | None:
+    """Get a deterministic reply for very common simple prompts."""
+    query_lower = normalize_query(query)
+    return SIMPLE_RESPONSES.get(query_lower)
+
+def should_use_rag(query: str) -> bool:
+    """Determine if we should use RAG for this query"""
+    query_lower = query.lower().strip()
+    
+    # Skip RAG for greetings
+    if is_greeting(query):
+        return False
+    
+    # Skip RAG for very short queries (less than 5 chars)
+    if len(query_lower) < 5:
+        return False
+    
+    # SIRDC-related keywords that should trigger RAG
+    sirdc_keywords = {
+        "sirdc", "sir dc", "scientific", "industrial", "research", 
+        "development", "centre", "center", "cluster", "training", 
+        "course", "product", "service", "agriculture", "energy", 
+        "power", "health", "mining", "mineral", "ict", "water", 
+        "environment", "built environment", "transport", "commercialisation",
+        "zts", "foundry", "seed", "potato", "maize", "vaccine",
+        "metrology", "calibration", "biotechnology", "food", "nutrition",
+        "sme", "enterprise", "partnership", "director", "ceo",
+        "executive", "board", "chairperson", "manager"
+    }
+    
+    # Check if query contains any SIRDC keyword
+    for keyword in sirdc_keywords:
+        if keyword in query_lower:
+            return True
+    
+    # For queries longer than 20 chars that don't have keywords, use RAG anyway
+    return len(query_lower) > 20
 
 # ============================================
 # BUILD VECTORSTORE FROM SIRD DATASET
@@ -1371,6 +1467,7 @@ META = None
 EMBED_MODEL = None
 EMBED_MODEL_NAME = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
 
+# Try to load from disk first (from ingest.py)
 if faiss and SentenceTransformer and VECTOR_DIR.exists() and (VECTOR_DIR / "index.faiss").exists():
     try:
         print("🔄 Loading SIRD vectorstore from disk...")
@@ -1418,30 +1515,38 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str):
     await manager.connect(user_id, websocket)
     try:
         while True:
-            # Receive the signaling data from the frontend
             data = await websocket.receive_json()
-
             target_user = data.get("target")
-            # Expected types: 'offer', 'answer', or 'candidate'.
             message_type = data.get("type")
             payload = data.get("payload")
-
-            # Route the message to the specific target user
             await manager.send_personal_message(
                 {"from": user_id, "type": message_type, "payload": payload},
                 target_user,
             )
-
     except WebSocketDisconnect:
         manager.disconnect(user_id)
 
 
+# ============================================
+# FIXED: _call_local_model with retry logic
+# ============================================
 async def _call_local_model(
     prompt: str,
     temperature: float | None = None,
     max_tokens: int | None = None,
     model_override: str | None = None,
 ) -> str:
+    def select_preferred_model(model_names: list[str]) -> str | None:
+        normalized = [name.lower() for name in model_names if name]
+        for preferred in PREFERRED_OLLAMA_MODELS:
+            for name in normalized:
+                if name == preferred or name.startswith(f"{preferred}:"):
+                    return name
+        for name in normalized:
+            if name.startswith("llama"):
+                return name
+        return None
+
     # Use the model from env or override
     model_name = model_override or os.getenv("OLLAMA_MODEL")
     
@@ -1454,79 +1559,108 @@ async def _call_local_model(
                 tags_data = tags_resp.json()
                 models = tags_data.get("models", [])
                 if models and len(models) > 0:
-                    model_name = models[0].get("name")
+                    model_names = [m.get("name") for m in models if m.get("name")]
+                    model_name = select_preferred_model(model_names)
                     print(f"✅ Auto-detected model: {model_name}")
         except Exception as e:
             print(f"⚠️ Could not auto-detect model: {e}")
     
     # Final fallback
     if not model_name:
-        model_name = "mistral"
+        model_name = "llama3.2:3b"
         print(f"ℹ️ Using fallback model: {model_name}")
 
-    # Build the payload
+    # Build the payload with smaller defaults
     payload = {
         "model": model_name,
         "prompt": prompt,
-        "stream": False
+        "stream": False,
+        "options": {
+            "num_predict": max_tokens or 150,  # Limit output length
+            "temperature": temperature or 0.7,
+        }
     }
-    if temperature is not None:
-        payload["temperature"] = float(temperature)
-    if max_tokens is not None:
-        payload["max_tokens"] = int(max_tokens)
 
     print(f"📤 Sending to Ollama: model={model_name}, prompt_length={len(prompt)}")
     
-    # Make the request with longer timeout
-    async with httpx.AsyncClient(timeout=120.0) as client:
+    def fallback_reply(reason: str) -> str:
+        print(f"⚠️ Falling back to safe reply: {reason}")
+        return (
+            "I’m having trouble reaching the local model right now, but I’m still here. "
+            "Please try again in a moment, or ask me a SIRDC question and I’ll help with what I can."
+        )
+
+    # Retry logic with 3 attempts and shorter timeout
+    max_retries = 3
+    for attempt in range(max_retries):
         try:
-            resp = await client.post(f"{OLLAMA_BASE_URL}/api/generate", json=payload)
-            if resp.status_code != 200:
-                print(f"❌ Ollama error: {resp.status_code} - {resp.text}")
-                raise HTTPException(
-                    status_code=502, 
-                    detail=f"Ollama error: {resp.text}"
-                )
-            
-            data = resp.json()
-            print(f"✅ Ollama response received")
-            
-            if isinstance(data, dict):
-                if "response" in data:
-                    return data["response"]
-                if "message" in data and isinstance(data["message"], dict):
-                    return data["message"].get("content") or str(data["message"])
-            
-            return str(data)
-            
+            async with httpx.AsyncClient(timeout=15.0) as client:  # keep requests responsive
+                resp = await client.post(f"{OLLAMA_BASE_URL}/api/generate", json=payload)
+                
+                if resp.status_code != 200:
+                    print(f"❌ Ollama error: {resp.status_code} - {resp.text}")
+                    if attempt < max_retries - 1:
+                        print(f"🔄 Retrying... (attempt {attempt + 2}/{max_retries})")
+                        await asyncio.sleep(2)  # Wait 2 seconds before retry
+                        continue
+                    return fallback_reply(f"ollama returned {resp.status_code}")
+                
+                data = resp.json()
+                print(f"✅ Ollama response received")
+                
+                if isinstance(data, dict):
+                    if "response" in data:
+                        return data["response"]
+                    if "message" in data and isinstance(data["message"], dict):
+                        return data["message"].get("content") or str(data["message"])
+                
+                return str(data)
+                
         except httpx.TimeoutException:
-            print("❌ Ollama request timed out")
-            raise HTTPException(
-                status_code=504,
-                detail="Ollama request timed out. The model might be loading or busy."
-            )
+            print(f"⏱️ Ollama timeout (attempt {attempt + 1}/{max_retries})")
+            if attempt < max_retries - 1:
+                print(f"🔄 Retrying... (attempt {attempt + 2}/{max_retries})")
+                await asyncio.sleep(2)  # Wait 2 seconds before retry
+                continue
+            print("❌ Ollama request timed out after all retries")
+            return fallback_reply("request timed out")
         except Exception as e:
             print(f"❌ Ollama request failed: {e}")
-            raise HTTPException(
-                status_code=500,
-                detail=f"Error communicating with Ollama: {str(e)}"
-            )
+            if attempt < max_retries - 1:
+                print(f"🔄 Retrying... (attempt {attempt + 2}/{max_retries})")
+                await asyncio.sleep(2)
+                continue
+            return fallback_reply(str(e))
+    
+    return fallback_reply("all attempts failed")
 
 
-def retrieve_context(query: str, top_k: int = 5):
+# ============================================
+# FIXED: retrieve_context with reduced size
+# ============================================
+def retrieve_context(query: str, top_k: int = 2):  # REDUCED from 3 to 2
+    """Retrieve relevant context with chunk limiting"""
     if INDEX is None or EMBED_MODEL is None or META is None:
         return []
-    q_emb = EMBED_MODEL.encode([query], convert_to_numpy=True)
-    faiss.normalize_L2(q_emb)
-    D, I = INDEX.search(q_emb, top_k)
-    results = []
-    for idx in I[0]:
-        try:
-            if idx < len(META):
-                results.append(META[idx]["text"])
-        except Exception:
-            continue
-    return results
+    try:
+        q_emb = EMBED_MODEL.encode([query], convert_to_numpy=True)
+        faiss.normalize_L2(q_emb)
+        D, I = INDEX.search(q_emb, top_k)
+        results = []
+        for idx in I[0]:
+            try:
+                if idx < len(META):
+                    text = META[idx]["text"]
+                    # Limit each chunk to 300 characters (REDUCED from 500)
+                    if len(text) > 300:
+                        text = text[:300] + "..."
+                    results.append(text)
+            except Exception:
+                continue
+        return results
+    except Exception as e:
+        print(f"⚠️ Error retrieving context: {e}")
+        return []
 
 
 @app.post("/api/chat")
@@ -1537,10 +1671,20 @@ async def chat_endpoint(req: Request):
         if not text:
             raise HTTPException(status_code=400, detail='Missing "text" in request body')
 
-        # SIRD system instruction - hardcoded
-        SIRD_SYSTEM_INSTRUCTION = "your name is RALPH you are a helpful assistant on the SCIENTIFIC AND INDUSTRIAL RESEARCH AND DEVELOPMENT CENTRE (SIRDC) website answer concisely using the provided context."
+        # Check for greeting responses first (no Ollama call)
+        greeting_response = get_greeting_response(text)
+        if greeting_response:
+            print(f"📝 Greeting detected: '{text}' - returning cached response")
+            return JSONResponse({"reply": greeting_response, "retrieved": 0})
+
+        simple_response = get_simple_response(text)
+        if simple_response:
+            print(f"📝 Simple prompt detected: '{text}' - returning cached response")
+            return JSONResponse({"reply": simple_response, "retrieved": 0})
+
+        # SIRD system instruction - shorter version
+        SIRD_SYSTEM_INSTRUCTION = "You are RALPH, an assistant for SIRDC (Scientific and Industrial Research and Development Centre). Answer questions about SIRDC's clusters, training, products, and services concisely."
         
-        # optional fields
         system = (
             payload.get("system")
             or os.getenv("DEFAULT_SYSTEM_PROMPT")
@@ -1548,25 +1692,39 @@ async def chat_endpoint(req: Request):
         )
         temperature = payload.get("temperature")
         max_tokens = payload.get("max_tokens")
-        top_k = int(payload.get("top_k", os.getenv("DEFAULT_TOP_K", 5)))
         model_override = payload.get("model")
 
-        # retrieve context if available
-        context_blocks = retrieve_context(text, top_k=top_k) if INDEX is not None else []
-        context_text = "\n\n---\n\n".join(context_blocks)
+        # Only use RAG if needed
+        context_blocks = []
+        context_text = ""
+        
+        if should_use_rag(text) and INDEX is not None:
+            top_k = int(payload.get("top_k", os.getenv("DEFAULT_TOP_K", 2)))  # REDUCED to 2
+            context_blocks = retrieve_context(text, top_k=top_k)
+            
+            if context_blocks:
+                context_text = "\n\n---\n\n".join(context_blocks)
+                # Limit total context to 500 characters (REDUCED from 800)
+                if len(context_text) > 500:
+                    context_text = context_text[:500] + "..."
+                print(f"📚 Retrieved {len(context_blocks)} context chunks")
+            else:
+                print("📚 No context retrieved")
+        else:
+            print("📝 Skipping RAG for simple query")
 
-        prompt_parts = [f"System: {system}"]
+        # Build prompt - simpler format
         if context_text:
-            prompt_parts.append(f"Context:\n{context_text}")
-        prompt_parts.append(f"User: {text}")
-        prompt = "\n\n".join(prompt_parts)
-
-        print(f"📝 Sending prompt to Ollama (length: {len(prompt)})")
+            prompt = f"{system}\n\nContext:\n{context_text}\n\nUser: {text}\n\nAssistant:"
+        else:
+            prompt = f"{system}\n\nUser: {text}\n\nAssistant:"
+        
+        print(f"📤 Sending prompt to Ollama (length: {len(prompt)})")
         
         reply = await _call_local_model(
             prompt,
-            temperature=temperature,
-            max_tokens=max_tokens,
+            temperature=temperature or 0.7,
+            max_tokens=max_tokens or 150,  # REDUCED from 200 to 150
             model_override=model_override,
         )
         return JSONResponse({"reply": reply, "retrieved": len(context_blocks)})
